@@ -14,14 +14,10 @@ const uploadData = async (req, res) => {
   try {
     const { languageCode, extractedData } = req.body;
 
-    // This is how extracted data must be looking
-    // const extractedData = [
-    //   { key: "greeting", value: "Hello" },
-    //   { key: "farewell", value: "Goodbye" },
-    //   { key: "thanks", value: "Thank you" },
-    // ];
+    // console.log("languageCode is ", languageCode);
+    // console.log("extractedData is ", extractedData);
 
-    if (!languageCode || !extractedData || !Array.isArray(extractedData)) {
+    if (!languageCode || !extractedData || typeof extractedData !== "object") {
       return res.status(400).send({
         message: "Invalid request: Missing languageCode or extractedData.",
       });
@@ -38,7 +34,7 @@ const uploadData = async (req, res) => {
 
     const [existingLanguage] = existingLanguageResult;
 
-    console.log("existingLanguageSize is " , existingLanguage.length);
+    console.log("existingLanguageSize is ", existingLanguage.length);
 
     if (existingLanguage.length === 0) {
       await db.query(
@@ -48,9 +44,6 @@ const uploadData = async (req, res) => {
     }
 
     // Insert metadata into the UploadedFiles table
-    
-
-    // Prepare data for insertion into OriginalData table
     const insertQuery = `
       INSERT INTO OriginalData (key_name, value, language_code) 
       VALUES ? 
@@ -58,11 +51,10 @@ const uploadData = async (req, res) => {
       value = VALUES(value);
     `;
 
-    const values = extractedData.map((item) => [
-      item.key,
-      item.value,
-      languageCode,
-    ]);
+    const values = [];
+    for (const key in extractedData) {
+      values.push([key, extractedData[key], languageCode]);
+    }
 
     await db.query(insertQuery, [values]);
 
@@ -77,6 +69,56 @@ const uploadData = async (req, res) => {
 };
 
 
+// ====================================================================
+
+const addNewKey = async (req, res) => {
+  const { key, translations } = req.body;
+
+  if (!key || !translations || typeof translations !== "object") {
+    return res.status(400).json({ error: "Invalid request data" });
+  }
+
+  console.log("Before inserting new key in originalData table");
+
+  try {
+    // Prepare values for bulk insertion
+    const values = [];
+
+    for (const [langCode, value] of Object.entries(translations)) {
+      if (langCode && value) {
+        values.push([key, value, langCode]);
+      }
+    }
+
+    if (values.length === 0) {
+      return res.status(400).json({ error: "No valid translations provided" });
+    }
+
+    // SQL bulk insert query
+    const insertQuery = `
+      INSERT INTO originaldata (key_name, value, language_code)
+      VALUES ?
+      ON DUPLICATE KEY UPDATE value = VALUES(value);
+    `;
+
+    // Execute the bulk insert
+    await db.query(insertQuery, [values]);
+
+    console.log("Inserted new key and translations successfully.");
+    res
+      .status(201)
+      .json({ message: "New key and translations added successfully" });
+  } catch (error) {
+    console.error("Error inserting new key data:", error);
+    res.status(500).json({ error: "Failed to add new key and translations" });
+  }
+};
+
+
+
+
+
+
 module.exports = {
-  uploadData,
+  uploadData, addNewKey,
 };

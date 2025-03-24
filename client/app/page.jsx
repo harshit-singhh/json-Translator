@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import DynamicTable from "@/components/DynamicTable";
 import SearchableDropdown from "@/components/SearchableDropdown";
 import languages from "@data/languages";
+import AddKeyModal from "@/components/AddKeyModal";
+
 
 export default function HomePage() {
   const [file, setFile] = useState(null);
@@ -13,15 +15,30 @@ export default function HomePage() {
   const [languageName, setLanguageName] = useState("");
   const [translations, setTranslations] = useState({}); // Store translations for each language
   const [selectedOption, setSelectedOption] = useState(null);
-  const [originalDataLanguageCode, setOriginalDataLanguageCode] = useState("");
+  const [originalDataLanguageCode, setOriginalDataLanguageCode] =
+    useState("en");
   const [currentlySelectedLanguageName, setCurrentlySelectedLanguageName] =
     useState("");
-  const [currentlySelectedLanguageCode, setCurrentlySelectedLanguageCode] = useState("");
+  const [currentlySelectedLanguageCode, setCurrentlySelectedLanguageCode] =
+    useState("");
   const [isLoading, setIsLoading] = useState(false); // Loading state for button
+  const [initialUploadCounter, setInitialUploadCounter] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false); // Control modal visibility
 
   useEffect(() => {
     console.log("translations state", translations);
   }, [JSON.stringify(translations)]); // ✅ Correct
+
+  useEffect(() => {
+    console.log("parsed Data", parsedData);
+  }, [JSON.stringify(parsedData)]);
+
+  useEffect(() => {
+    console.log("initialUploadCounter ", initialUploadCounter);
+  }, [initialUploadCounter]);
+  useEffect(() => {
+    console.log("originalDataLanguageCode", originalDataLanguageCode);
+  }, [originalDataLanguageCode]);
 
   // Handle file selection
   const handleFileChange = (event) => {
@@ -32,30 +49,35 @@ export default function HomePage() {
     }
   };
 
+  const getLanguageName = (code) => {
+    const lang = languages.find((l) => l.code === code);
+    return lang ? lang.name : code; // Fallback to code if name is not found
+  };
+
   // Function to recursively flatten the JSON object
   const flattenObject = (obj, prefix = "") => {
-    let result = [];
+    let result = {};
 
     for (let [key, value] of Object.entries(obj)) {
       const newKey = prefix ? `${prefix}.${key}` : key;
 
       if (typeof value === "object" && value !== null) {
-        result = result.concat(flattenObject(value, newKey));
+        Object.assign(result, flattenObject(value, newKey));
       } else {
-        result.push({ key: newKey, value });
+        result[newKey] = value;
       }
     }
 
     return result;
 
-    // This is how the result array would look
-    // [
-    //   { key: "ok", value: "OK" },
-    //   { key: "next", value: "Next" },
-    //   { key: "nested.allow", value: "Allow" },
-    //   { key: "nested.apply", value: "Apply" },
-    //   { key: "nested.deeper.error", value: "Error" },
-    // ];
+    // Updated output format:
+    // {
+    //   "ok": "OK",
+    //   "next": "Next",
+    //   "nested.allow": "Allow",
+    //   "nested.apply": "Apply",
+    //   "nested.deeper.error": "Error"
+    // }
   };
 
   // Handle language upload
@@ -68,7 +90,6 @@ export default function HomePage() {
     setCurrentlySelectedLanguageCode(selectedlanguageCode);
     try {
       setIsLoading(true); // Start loader
-      
 
       const response = await fetch("http://localhost:5000/api/translations", {
         method: "POST",
@@ -130,19 +151,42 @@ export default function HomePage() {
         const text = event.target.result;
 
         try {
-          const jsonData = JSON.parse(text);
+          const languageCode = file.name.split(".")[0];
+          const languageName = getLanguageName(languageCode);
+          const languageKey = `${languageName}_${languageCode}`;
 
-          // Flatten the JSON data
+          // Check if it's the first upload and ensure it's English
+          if (initialUploadCounter === 0 && languageCode !== "en") {
+            setUploadMessage("Upload English language first.");
+            setIsFileSelected(false);
+            return;
+          }
+
+          const jsonData = JSON.parse(text);
           const extractedData = flattenObject(jsonData);
 
-          // Set the parsed data
-          setParsedData(extractedData);
+          setParsedData((prevData) => {
+            const updatedData = { ...prevData };
 
-          // Extract language code from the filename (e.g., 'en.json' -> 'en')
-          const languageCode = file.name.split(".")[0];
-          setOriginalDataLanguageCode(languageCode);
+            if (languageCode === "en") {
+              // If English, store all key-value pairs
+              updatedData[languageKey] = extractedData;
+            } else {
+              // Ensure all English keys exist in the new language
+              updatedData[languageKey] = Object.fromEntries(
+                Object.keys(updatedData["English_en"] || {}).map((key) => [
+                  key,
+                  extractedData[key] ?? "No Translation Found",
+                ])
+              );
+            }
 
-          // Send extracted data and language code to the backend
+            return updatedData;
+          });
+
+          setInitialUploadCounter((prev) => prev + 1); // Increase counter after a successful upload
+
+          // Send to backend
           const response = await fetch(
             "http://localhost:5000/api/uploads/upload",
             {
@@ -151,8 +195,8 @@ export default function HomePage() {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                languageCode, // Language code
-                extractedData, // Flattened keys and values
+                languageCode,
+                extractedData, // Flattened key-value pairs
               }),
             }
           );
@@ -162,8 +206,9 @@ export default function HomePage() {
           }
 
           const result = await response.json();
-          setLanguageName(result.metadata.languageName); // Set the language name from backend
+          setLanguageName(result.metadata.languageName);
           setUploadMessage("File parsed and uploaded successfully!");
+          setIsFileSelected(false);
         } catch (error) {
           console.error("Error parsing JSON:", error);
           setUploadMessage("Error parsing file!");
@@ -176,7 +221,6 @@ export default function HomePage() {
     }
   };
 
-
   const updateTranslation = async (
     key,
     originalLangCode,
@@ -184,16 +228,14 @@ export default function HomePage() {
     newTranslation
   ) => {
     try {
+      const requestData = {
+        key,
+        newTranslation,
+        originalLanguageCode: originalLangCode,
+        translatedLanguageCode: translatedLangCode,
+      };
 
-        const requestData = {
-          key,
-          newTranslation,
-          originalLanguageCode: originalLangCode,
-          translatedLanguageCode: translatedLangCode,
-        };
-
-        console.log("Sending update request with data:", requestData);
-
+      console.log("Sending update request with data:", requestData);
 
       const response = await fetch(
         `http://localhost:5000/api/translations/edit`,
@@ -226,83 +268,123 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-6">
-      {/* Title */}
-      <h1 className="text-5xl font-bold text-center text-gray-800 mb-8">
-        Translation Dashboard
-      </h1>
+    <>
+      {/* Background Content */}
+      <div
+        className={`min-h-screen flex flex-col items-center justify-center bg-grey-100 p-6 transition-all duration-80 ${
+          isModalOpen ? "blur-sm" : ""
+        }`}
+      >
+        {/* Title */}
+        <h1 className="text-5xl font-bold text-center text-gray-800 mb-8">
+          Translation Dashboard
+        </h1>
 
-      {/* File Upload Buttons */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 mb-8">
-        <input
-          type="file"
-          onChange={handleFileChange}
-          id="file-upload"
-          className="hidden"
-        />
-        <label
-          htmlFor="file-upload"
-          className={`cursor-pointer px-6 py-3 ${
-            isFileSelected ? "bg-green-500" : "bg-red-500"
-          } text-white text-center text-lg font-semibold rounded-lg w-40 ${
-            isFileSelected ? "hover:bg-green-600" : "hover:bg-red-600"
-          }`}
-        >
-          {isFileSelected ? "File Selected" : "Select File"}
-        </label>
-        <button
-          onClick={handleUpload}
-          className="px-6 py-3 bg-red-500 text-white text-center w-40 text-lg font-semibold rounded-lg hover:bg-red-600"
-        >
-          Upload File
-        </button>
-      </div>
-
-      {/* Upload Message */}
-      {uploadMessage && <p className="text-gray-700 mb-6">{uploadMessage}</p>}
-
-      {/* Searchable Dropdown and Add Language Button */}
-      {parsedData.length > 0 && languageName && (
-        <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
-          <SearchableDropdown
-            selectedOption={selectedOption}
-            setSelectedOption={setSelectedOption}
+        {/* File Upload Buttons */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 mb-8">
+          <input
+            type="file"
+            onChange={handleFileChange}
+            id="file-upload"
+            className="hidden"
           />
-          <button
-            onClick={() =>
-              handleUploadLanguage(
-                selectedOption.value,
-                selectedOption.label,
-                originalDataLanguageCode
-              )
-            }
-            disabled={!selectedOption || isLoading}
-            className={`px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded-lg flex items-center justify-center ${
-              !selectedOption || isLoading
-                ? "opacity-50 cursor-not-allowed"
-                : "hover:bg-green-600"
+          <label
+            htmlFor="file-upload"
+            className={`cursor-pointer px-6 py-3 ${
+              isFileSelected ? "bg-green-500" : "bg-red-500"
+            } text-white text-center text-lg font-semibold rounded-lg w-40 ${
+              isFileSelected ? "hover:bg-green-600" : "hover:bg-red-600"
             }`}
           >
-            {isLoading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              "Add Language"
-            )}
+            {isFileSelected ? "File Selected" : "Select File"}
+          </label>
+          <button
+            onClick={handleUpload}
+            className="px-6 py-3 bg-red-500 text-white text-center w-40 text-lg font-semibold rounded-lg hover:bg-red-600"
+          >
+            Upload File
           </button>
         </div>
-      )}
 
-      {/* Dynamic Table */}
-      {parsedData.length > 0 && (
-        <DynamicTable
-          parsedData={parsedData}
-          translations={translations}
-          setTranslations={setTranslations}
-          languageName={languageName}
-          updateTranslation={updateTranslation}
-          originalDataLanguageCode={originalDataLanguageCode}
-        />
+        {/* Upload Message */}
+        {uploadMessage && <p className="text-gray-700 mb-6">{uploadMessage}</p>}
+
+        {/* Searchable Dropdown and Add Language Button */}
+        {Object.keys(parsedData).length > 0 && languageName && (
+          <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
+            <SearchableDropdown
+              selectedOption={selectedOption}
+              setSelectedOption={setSelectedOption}
+            />
+            <button
+              onClick={() =>
+                handleUploadLanguage(
+                  selectedOption.value,
+                  selectedOption.label,
+                  originalDataLanguageCode
+                )
+              }
+              disabled={!selectedOption || isLoading}
+              className={`px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded-lg flex items-center justify-center ${
+                !selectedOption || isLoading
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:bg-green-600"
+              }`}
+            >
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                "Add Language"
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Add Key Button */}
+        {languageName && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="px-12 py-3 mb-8 bg-blue-500 text-white text-lg font-semibold rounded-lg hover:bg-blue-600"
+          >
+            Add Key
+          </button>
+        )}
+
+        {/* Dynamic Table */}
+        {Object.keys(parsedData).length > 0 && (
+          <DynamicTable
+            parsedData={parsedData}
+            translations={translations}
+            setTranslations={setTranslations}
+            languageName={languageName}
+            updateTranslation={updateTranslation}
+            originalDataLanguageCode={originalDataLanguageCode}
+          />
+        )}
+      </div>
+
+      {/* Add Key Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 bg-slate-400 bg-opacity-30 z-40"
+            onClick={() => setIsModalOpen(false)}
+          ></div>
+
+          {/* Modal Content */}
+          <div className="relative z-50">
+            <AddKeyModal
+              setIsModalOpen={setIsModalOpen}
+              parsedData={parsedData}
+              setParsedData={setParsedData}
+              geminiTranslations={translations}
+              setGeminiTranslations={setTranslations}
+            />
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
+
 }

@@ -4,7 +4,8 @@ import {
   getCoreRowModel,
   flexRender,
 } from "@tanstack/react-table";
-import { FaPen, FaSave, FaDownload } from "react-icons/fa"; // Added download icon
+import { FaPen, FaSave, FaDownload } from "react-icons/fa";
+
 
 const DynamicTable = ({
   parsedData,
@@ -29,40 +30,61 @@ const DynamicTable = ({
     console.log("Languages Array", addedLanguages);
   }, [JSON.stringify(addedLanguages)]);
 
+
   const columns = useMemo(() => {
-    const baseColumns = [
-      { header: "Key", accessorKey: "key" },
-      { header: `${languageName} Translation`, accessorKey: "value" },
-    ];
+    const baseColumns = [{ header: "Key", accessorKey: "key" }];
+
+    Object.keys(parsedData).forEach((lang) => {
+      baseColumns.push({
+        header: `${lang} Translation`,
+        accessorKey: lang,
+      });
+    });
 
     addedLanguages.forEach((lang) => {
-      const [langName, langCode] = lang.split("_");
+      const [langName, langCode] = lang.split("_"); // Keep extracting langName and langCode
       baseColumns.push({
         header: (
           <div className="flex items-center justify-between w-full">
-            <span className="flex-grow text-center">{`${langName} Translation`}</span>
+            <span className="flex-grow text-center">{`${langName}_${langCode} Translation`}</span>
             <FaDownload
               className="text-gray-500 cursor-pointer ml-2"
               onClick={() => handleDownload(`${langName}_${langCode}`)}
             />
           </div>
         ),
-        accessorKey: `${langName}_${langCode}`,
+        accessorKey: `${langName}_${langCode}`, // Maintain the original structure
       });
     });
 
     return baseColumns;
-  }, [languageName, addedLanguages]);
+  }, [parsedData, addedLanguages]);
 
   const data = useMemo(() => {
-    return parsedData.map((item) => {
-      const row = { key: item.key, value: item.value };
+    const allKeys = new Set();
 
+    // Collect all possible keys from parsedData
+    Object.values(parsedData).forEach((translationsObj) => {
+      Object.keys(translationsObj).forEach((key) => allKeys.add(key));
+    });
+
+    return Array.from(allKeys).map((key) => {
+      const row = { key };
+
+      // Fill row with existing translations from parsedData
+      Object.entries(parsedData).forEach(([lang, translationsObj]) => {
+        const [langName, langCode] = lang.split("_"); // Restore split logic
+        row[`${langName}_${langCode}`] = translationsObj[key] || "Not found";
+      });
+
+      // Fill row with newly translated values
       addedLanguages.forEach((lang) => {
-        const [langName, langCode] = lang.split("_");
-        const translation = translations[lang]?.find((t) => t.key === item.key);
-        row[`${langName}_${langCode}`] = translation
-          ? translation.translation
+        const [langName, langCode] = lang.split("_"); // Restore split logic
+
+        // Ensure translations[lang] is an array and find the correct key
+        const translationObj = translations[lang]?.find((t) => t.key === key);
+        row[`${langName}_${langCode}`] = translationObj
+          ? translationObj.translation
           : "Not found";
       });
 
@@ -102,7 +124,6 @@ const DynamicTable = ({
     document.body.removeChild(link);
   };
 
-
   const convertToNestedObject = (flatObject) => {
     const nestedObject = {};
 
@@ -129,7 +150,6 @@ const DynamicTable = ({
 
     return nestedObject;
   };
-
 
 
   const handleEditClick = (rowId, columnId, currentValue) => {
@@ -165,6 +185,7 @@ const DynamicTable = ({
       })
       .catch((error) => console.error("Error updating translation:", error));
   };
+
 
   return (
     <table className="border border-gray-300 w-full table-fixed">
@@ -228,7 +249,7 @@ const DynamicTable = ({
                               currentTranslation
                             )
                           }
-                          className="text-blue-500 cursor-pointer text-lg opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          className="text-blue-500 cursor-pointer text-lg opacity-0 group-hover:opacity-100  flex-shrink-0"
                         />
                       )}
                     </div>
@@ -244,29 +265,3 @@ const DynamicTable = ({
 };
 
 export default DynamicTable;
-
-
-
-// const handleDownload = (language) => {
-//   if (!translations[language]) {
-//     console.error(`No translations found for ${language}`);
-//     return;
-//   }
-
-//   const jsonData = JSON.stringify(
-//     translations[language].reduce((acc, { key, translation }) => {
-//       acc[key] = translation;
-//       return acc;
-//     }, {}),
-//     null,
-//     2
-//   );
-
-//   const blob = new Blob([jsonData], { type: "application/json" });
-//   const link = document.createElement("a");
-//   link.href = URL.createObjectURL(blob);
-//   link.download = `${language}_Translation.json`;
-//   document.body.appendChild(link);
-//   link.click();
-//   document.body.removeChild(link);
-// };
