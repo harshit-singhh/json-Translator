@@ -88,6 +88,7 @@ export default function HomePage() {
   ) => {
     setCurrentlySelectedLanguageName(selectedlanguageName);
     setCurrentlySelectedLanguageCode(selectedlanguageCode);
+
     try {
       setIsLoading(true); // Start loader
 
@@ -99,7 +100,7 @@ export default function HomePage() {
         body: JSON.stringify({
           selectedlanguageCode,
           selectedlanguageName,
-          parsedData, // Sending the entire parsedData instead of just keys
+          parsedData, // Sending the entire parsedData
           originalDataLanguageCode,
         }),
       });
@@ -108,35 +109,38 @@ export default function HomePage() {
         throw new Error("Failed to upload language");
       }
 
-      const result = await response.json();
-      // console.log("backend result after converting to object", result);
-      const translationArray = result;
+      const result = await response.json(); // ✅ Receiving the new translationResponse structure
 
-      // console.log(
-      //   "this is translations array came from backend",
-      //   translationArray
-      // );
+      console.log("Backend response:", result);
 
-      console.log("Currently selected language code", selectedlanguageCode);
+      const { BatchTranslationResult, translations } = result; // ✅ Destructure the response
 
-      // Update translations state for the new language
+      // ✅ Update translations state for the new language first
       setTranslations((prevTranslations) => ({
         ...prevTranslations,
-        [`${selectedlanguageName}_${selectedlanguageCode}`]: translationArray, // Store as "French_fr"
+        [`${selectedlanguageName}_${selectedlanguageCode}`]: translations, // Store translations in the state
       }));
 
       console.log(
-        "successfully added the backend response in translations array"
+        "✅ Successfully added backend response to translations state"
       );
 
-      setUploadMessage("Language uploaded and translations updated!");
+      // ✅ Display appropriate message based on BatchTranslationResult after updating the table
+      if (!BatchTranslationResult) {
+        setUploadMessage(
+          "⚠️ Couldn't get translations of one or more keys. Please try again."
+        );
+      } else {
+        setUploadMessage("✅ Language uploaded and translations updated!");
+      }
     } catch (error) {
-      console.error("Error uploading language:", error);
-      setUploadMessage("Error adding language!");
+      console.error("❌ Error uploading language:", error);
+      setUploadMessage("❌ Error adding language!");
     } finally {
       setIsLoading(false); // Stop loader
     }
   };
+
 
   // Handle file parsing
   const handleUpload = async () => {

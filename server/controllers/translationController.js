@@ -33,19 +33,22 @@ const translateKeys = async (req, res) => {
     console.log("values Array", valuesArray);
 
     // Translate only the values using Gemini API
-    const translations = await getGeminiTranslations(
+    const translationResponse = await getGeminiTranslations(
       parsedData,
       valuesArray,
       selectedlanguageCode,
       selectedlanguageName
     );
 
-    console.log(
-      "translations got from gemini function. Now will send this to frontend",
-      translations
-    );
+    // console.log(
+    //   "translations got from gemini function. Now will send this to frontend",
+    //   translations
+    // );
 
     // Save translations to the database
+
+    const { translations } = translationResponse;
+
     await saveTranslationsToDB(
       translations, 
       originalDataLanguageCode,
@@ -53,7 +56,7 @@ const translateKeys = async (req, res) => {
     );
 
     // Send translated data back in the response
-    res.status(200).json(translations);
+    res.status(200).json(translationResponse);
   } catch (error) {
     console.error("Error translating values:", error);
     res.status(500).json({ error: "Failed to translate values" });
@@ -63,20 +66,25 @@ const translateKeys = async (req, res) => {
 
 
 // Function to get translations from Gemini API
-async function getGeminiTranslations(parsedData, valuesArray, languageCode, languageName) {
+async function getGeminiTranslations(
+  parsedData,
+  valuesArray,
+  languageCode,
+  languageName
+) {
   const translations = [];
-
-  // Initialize the API with your key
+  const batchSize = 25; // Batch size for multi-token sending
   const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-
-  // Specify the model
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-  // Construct the translation prompt for Gemini API
+  // Helper function to send a batch request
+  const translateBatch = async (valuesArray) => {
   const prompt = `
-  You are a translation assistant. Translate the following **values** into the language whose language code is ${languageCode} and language name is ${languageName}. 
+  You are a translation assistant. Translate the following **values** into the language whose language code is ${languageCode} and language name is ${languageName}.
+
 
   Follow these strict rules:
+
 
 1) Translate the **values** from the valuesArray.
 2) Preserve placeholders like "{}" exactly as they are in the translated text.
@@ -86,16 +94,18 @@ async function getGeminiTranslations(parsedData, valuesArray, languageCode, lang
 6) If you need more time to process each value for translation, take more time. Ensure that **all values are translated** and none are left out.
 7) Ensure that every value is translated.
 8) **If translation is unclear, do your best to provide the best possible answer. Do not leave translations empty.**
-9) **If the key has a full stop (.) Then put that full stop in the translation also, without forgetting** 
+9) **If the key has a full stop (.) Then put that full stop in the translation also, without forgetting**
+
 
   Example:
   **Input Data:**
   [
-    "No internet connection", 
+    "No internet connection",
     "{} Petrol Stations",
     "<style color=\\"#6E7781\\" fontSize=\\"20\\" fontWeight = \\"w400\\">Before getting started</style>",
     "Add Fuel Station",
   ]
+
 
   **Expected JSON Output if language code is "hi" (without markdown or extra formatting):**
   {
@@ -105,58 +115,98 @@ async function getGeminiTranslations(parsedData, valuesArray, languageCode, lang
     "Add Fuel Station": "ईंधन स्टेशन जोड़ें"
   }
 
+
   **Here is the actual data to translate:**
   ${JSON.stringify(valuesArray)}
 `;
 
   try {
-    // Generate the response from Gemini
-    const result = await model.generateContent(prompt);
+      const result = await model.generateContent(prompt);
+      const translatedText = result.response.text().trim();
 
-    // Extract and clean up the translated response
-    const translatedText = result.response.text().trim();
-    const parsedTranslations = JSON.parse(translatedText);
+      // Parse the JSON response
+      const parsedTranslations = JSON.parse(translatedText);
+      console.log(`🟢 Batch Translations:`, parsedTranslations);
 
-    // Process each item in parsedData and match translations
+      return parsedTranslations;
+    } catch (error) {
+      console.error(`❌ Error translating batch:`, error);
+      // Return empty translations on failure
+      return {};
+    }
+  };
 
-    // const parsedTranslations = {
-    //   OK: "ठीक है",
-    //   Next: "अगला",
-    // };
-    // console.log("this is the valuesArray stringified version which we sent to gemini", JSON.stringify(valuesArray) );
-    console.log("this is taza data from gemini", parsedTranslations);
+  try {
+    // ✅ Splitting into batches of 50
+    const batches = [];
+    for (let i = 0; i < valuesArray.length; i += batchSize) {
+      batches.push(valuesArray.slice(i, i + batchSize));
+    }
 
+    console.log(
+      `📦 Sending ${batches.length} batch(es) with batch size: ${batchSize}`
+    );
+
+    let isBatchFailed = false; // Flag to track if any batch fails
+
+    // ✅ Sending all batches concurrently using Promise.allSettled
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) => translateBatch(batch))
+    );
+
+    // ✅ Merging all batch responses into a single object
+    const combinedTranslations = batchResults
+      .filter((result) => result.status === "fulfilled")
+      .reduce((acc, batchResult) => {
+        return { ...acc, ...batchResult.value };
+      }, {});
+
+    // ✅ Check if any batch failed
+    isBatchFailed = batchResults.some((result) => result.status === "rejected");
+
+    console.log(`✅ Combined Translations:`, combinedTranslations);
+    console.log(`🚫 Batch Translation Failed: ${isBatchFailed}`);
+
+    // ✅ Mapping translations into the final format
+    const translations = [];
     for (const key in parsedData["English_en"]) {
       const originalValue = parsedData["English_en"][key];
       const translatedValue =
-        parsedTranslations[originalValue] || "Error fetching translation";
+        combinedTranslations[originalValue] || "Error fetching translation";
 
       translations.push({
         key: key, // Key from English_en
         value: originalValue, // Value from English_en
-        translation: translatedValue, // Translated value from parsedTranslations
+        translation: translatedValue, // Translated value
       });
     }
-  } catch (error) {
-    console.error("Error calling Gemini API:", error);
 
-    // Handle API failure by setting a default error message
+    // ✅ Returning both translations and batch status
+    return {
+      BatchTranslationResult: !isBatchFailed, // true if all batches succeed, false if any fail
+      translations,
+    };
+  } catch (error) {
+    console.error("❌ Error in multi-token translation:", error);
+
+    // ✅ Handle any major errors by setting a default error message
+    const translations = [];
     for (const key in parsedData["English_en"]) {
       translations.push({
-        key: key, // Key from English_en
-        value: parsedData["English_en"][key], // Value from English_en
+        key: key,
+        value: parsedData["English_en"][key],
         translation: "Error fetching translation",
       });
     }
+
+    return {
+      BatchTranslationResult: false, // Return false on complete failure
+      translations,
+    };
   }
 
-  return translations;
-  // [
-  //   { key: "ok", value: "OK", translation: "ठीक है" },
-  //   { key: "next", value: "Next", translation: "अगला" },
-  //   { key: "allow", value: "Allow", translation: "Error fetching translation" },
-  // ];
 }
+
 
 
 // Function to save translations to the database
@@ -166,7 +216,7 @@ async function saveTranslationsToDB(
   translatedLanguageCode
 ) {
   const query = `
-    INSERT INTO translations 
+    INSERT INTO translations
     (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
     VALUES ?
     ON DUPLICATE KEY UPDATE
@@ -176,6 +226,7 @@ async function saveTranslationsToDB(
     translated_at = CURRENT_TIMESTAMP
   `;
 
+
   const values = translations.map(({ key, value, translation }) => [
     key, // Original_data_keys
     value, // Original_data_value (original value)
@@ -184,6 +235,7 @@ async function saveTranslationsToDB(
     translatedLanguageCode, // translated_language_code
     "AI", // translated_by (AI as default)
   ]);
+
 
   console.log("------------------------------------------------------");
   console.log("this is the values array, which we'll insert in database", values);
@@ -195,6 +247,7 @@ async function saveTranslationsToDB(
     throw new Error("Failed to save translations to the database");
   }
 }
+
 
 
 
