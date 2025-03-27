@@ -30,7 +30,7 @@ const translateKeys = async (req, res) => {
     const valuesArray = Object.values(parsedData["English_en"] || {});
 
 
-    console.log("values Array", valuesArray);
+    // console.log("values Array", valuesArray);
 
     // Translate only the values using Gemini API
     const translationResponse = await getGeminiTranslations(
@@ -92,9 +92,13 @@ async function getGeminiTranslations(
 4) Return only a **valid JSON** object where **values are translated** while keeping keys unchanged.
 5) **Return the JSON response without markdown, backticks, or any extra formatting.**
 6) If you need more time to process each value for translation, take more time. Ensure that **all values are translated** and none are left out.
-7) Ensure that every value is translated.
-8) **If translation is unclear, do your best to provide the best possible answer. Do not leave translations empty.**
-9) **If the key has a full stop (.) Then put that full stop in the translation also, without forgetting**
+7) **If translation is unclear, do your best to provide the best possible answer. Do not leave translations empty.**
+8) **If the key has a full stop (.) Then put that full stop in the translation also, without forgetting**
+9) **Ensure the JSON syntax is correct:**  
+    - Escape all double quotes inside the translated values with a backslash (\\") to ensure valid JSON formatting. Do not leave any unescaped internal double quotes.
+    - **Do NOT add trailing commas or leave out required commas.** 
+    - **Always close the JSON with a proper closing brace.**  
+    - **Separate each key-value pair with a comma, except the last one.**
 
 
   Example:
@@ -122,9 +126,14 @@ async function getGeminiTranslations(
 
   try {
       const result = await model.generateContent(prompt);
-      const translatedText = result.response.text().trim();
+    const translatedText = result.response.text().trim();
+    // const safeText = translatedText.replace(
+    //   /:\s*"([^"]*?)"([^",\]}])/g,
+    //   ': "$1\\"$2'
+    // );
 
-      // Parse the JSON response
+    // Parse the JSON response
+      // console.log(`🟢 Raw Translated Text:`, translatedText);
       const parsedTranslations = JSON.parse(translatedText);
       console.log(`🟢 Batch Translations:`, parsedTranslations);
 
@@ -132,7 +141,7 @@ async function getGeminiTranslations(
     } catch (error) {
       console.error(`❌ Error translating batch:`, error);
       // Return empty translations on failure
-      return {};
+      throw error;
     }
   };
 
@@ -144,7 +153,7 @@ async function getGeminiTranslations(
     }
 
     console.log(
-      `📦 Sending ${batches.length} batch(es) with batch size: ${batchSize}`
+      `📦 Sending ${batches.length} batches with batch size: ${batchSize}`
     );
 
     let isBatchFailed = false; // Flag to track if any batch fails
@@ -164,7 +173,7 @@ async function getGeminiTranslations(
     // ✅ Check if any batch failed
     isBatchFailed = batchResults.some((result) => result.status === "rejected");
 
-    console.log(`✅ Combined Translations:`, combinedTranslations);
+    // console.log(`✅ Combined Translations:`, combinedTranslations);
     console.log(`🚫 Batch Translation Failed: ${isBatchFailed}`);
 
     // ✅ Mapping translations into the final format
@@ -207,64 +216,182 @@ async function getGeminiTranslations(
 
 }
 
-
+// ===========================================================================================
 
 // Function to save translations to the database
+// async function saveTranslationsToDB(
+//   translations,
+//   originalDataLanguageCode,
+//   translatedLanguageCode
+// ) {
+//   const query = `
+//     INSERT INTO translations
+//     (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
+//     VALUES ?
+//     ON DUPLICATE KEY UPDATE
+//     translated_value = VALUES(translated_value),
+//     translated_language_code = VALUES(translated_language_code),
+//     translated_by = VALUES(translated_by),
+//     translated_at = CURRENT_TIMESTAMP
+//   `;
+
+
+//   const values = translations.map(({ key, value, translation }) => [
+//     key, // Original_data_keys
+//     value, // Original_data_value (original value)
+//     originalDataLanguageCode, // Original_Data_Language_Code
+//     translation, // translated_value
+//     translatedLanguageCode, // translated_language_code
+//     "AI", // translated_by (AI as default)
+//   ]);
+
+
+//   console.log("------------------------------------------------------");
+//   console.log("this is the values array, which we'll insert in database", values);
+//   console.log("------------------------------------------------------");
+//   try {
+//     await db.query(query, [values]);
+//   } catch (error) {
+//     console.error("Error saving translations to DB:", error.message);
+//     throw new Error("Failed to save translations to the database");
+//   }
+// }
+
+
 async function saveTranslationsToDB(
   translations,
   originalDataLanguageCode,
   translatedLanguageCode
 ) {
-  const query = `
-    INSERT INTO translations
-    (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
-    VALUES ?
-    ON DUPLICATE KEY UPDATE
-    translated_value = VALUES(translated_value),
-    translated_language_code = VALUES(translated_language_code),
-    translated_by = VALUES(translated_by),
-    translated_at = CURRENT_TIMESTAMP
-  `;
-
-
-  const values = translations.map(({ key, value, translation }) => [
-    key, // Original_data_keys
-    value, // Original_data_value (original value)
-    originalDataLanguageCode, // Original_Data_Language_Code
-    translation, // translated_value
-    translatedLanguageCode, // translated_language_code
-    "AI", // translated_by (AI as default)
-  ]);
-
-
-  console.log("------------------------------------------------------");
-  console.log("this is the values array, which we'll insert in database", values);
-  console.log("------------------------------------------------------");
   try {
-    await db.query(query, [values]);
+    // ✅ Prepare values for bulk insertion
+    const values = translations.map(({ key, value, translation }) => [
+      key, // Original_data_keys
+      value, // Original_data_value
+      originalDataLanguageCode, // Original_Data_Language_Code
+      translation, // translated_value
+      translatedLanguageCode, // translated_language_code
+      "AI", // translated_by (default to AI)
+    ]);
+
+    if (values.length === 0) {
+      console.log("No translations to save.");
+      return;
+    }
+
+    // ✅ Dynamically generate PostgreSQL placeholders
+    const placeholders = values
+      .map(
+        (_, index) =>
+          `($${index * 6 + 1}, $${index * 6 + 2}, $${index * 6 + 3}, $${
+            index * 6 + 4
+          }, $${index * 6 + 5}, $${index * 6 + 6})`
+      )
+      .join(", ");
+
+    // ✅ PostgreSQL upsert query
+    const query = `
+      INSERT INTO translations 
+      (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
+      VALUES ${placeholders}
+      ON CONFLICT (Original_data_keys, Original_Data_Language_Code, translated_language_code)
+      DO UPDATE SET
+        translated_value = EXCLUDED.translated_value,
+        translated_language_code = EXCLUDED.translated_language_code,
+        translated_by = EXCLUDED.translated_by,
+        translated_at = CURRENT_TIMESTAMP;
+    `;
+
+    // ✅ Flatten the values array for parameterized query execution
+    const flatValues = values.flat();
+
+    console.log("------------------------------------------------------");
+    console.log("🔥 Values to insert in PostgreSQL:", flatValues);
+    console.log("------------------------------------------------------");
+
+    // ✅ Execute the query
+    await db.query(query, flatValues);
+
+    console.log("✅ Translations saved successfully in PostgreSQL!");
   } catch (error) {
-    console.error("Error saving translations to DB:", error.message);
+    console.error("❌ Error saving translations to DB:", error.message);
     throw new Error("Failed to save translations to the database");
   }
 }
 
 
 
-
-
 // ===========================================================================================
 
+// const translationEdit = async (req, res) => {
+
+//   console.log("You reached translationEdit");
+//   const {
+//     key,
+//     newTranslation,
+//     originalLanguageCode,
+//     translatedLanguageCode,
+//   } = req.body;
+
+//   // Validate input
+//   if (
+//     !key ||
+//     !newTranslation ||
+//     !originalLanguageCode ||
+//     !translatedLanguageCode
+//   ) {
+//     return res.status(400).json({ error: "Missing required fields" });
+//   }
+
+//   // Validate input formats
+//   if (
+//     typeof key !== "string" ||
+//     typeof newTranslation !== "string" ||
+//     typeof originalLanguageCode !== "string" ||
+//     typeof translatedLanguageCode !== "string"
+//   ) {
+//     return res.status(400).json({ error: "Invalid input format" });
+//   }
+
+//   try {
+//     // Update the translation in the database
+//     const query = `
+//       UPDATE Translations
+//       SET translated_value = ?, translated_by = 'USER', translated_at = CURRENT_TIMESTAMP
+//       WHERE Original_data_keys = ?
+//       AND Original_Data_Language_Code = ?
+//       AND translated_language_code = ?
+//     `;
+
+//     // Execute the query with parameterized inputs to prevent SQL injection
+//     const [result] = await db.query(query, [
+//       newTranslation,
+//       key,
+//       originalLanguageCode,
+//       translatedLanguageCode,
+//     ]);
+
+//     // Check if the translation was actually updated
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ error: "Translation not found" });
+//     }
+
+//     // Send success response
+//     res.status(200).json({ message: "Translation updated successfully!" });
+//   } catch (error) {
+//     console.error("Error updating translation:", error);
+//     res.status(500).json({ error: "Failed to update translation" });
+//   }
+// };
+
+
 const translationEdit = async (req, res) => {
-
   console.log("You reached translationEdit");
-  const {
-    key,
-    newTranslation,
-    originalLanguageCode,
-    translatedLanguageCode,
-  } = req.body;
 
-  // Validate input
+  const { key, newTranslation, originalLanguageCode, translatedLanguageCode } =
+    req.body;
+
+  // ✅ Validate input
   if (
     !key ||
     !newTranslation ||
@@ -274,7 +401,7 @@ const translationEdit = async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Validate input formats
+  // ✅ Validate input formats
   if (
     typeof key !== "string" ||
     typeof newTranslation !== "string" ||
@@ -285,42 +412,43 @@ const translationEdit = async (req, res) => {
   }
 
   try {
-    // Update the translation in the database
+    // ✅ PostgreSQL Update Query
     const query = `
-      UPDATE Translations 
-      SET translated_value = ?, translated_by = 'USER', translated_at = CURRENT_TIMESTAMP
-      WHERE Original_data_keys = ? 
-      AND Original_Data_Language_Code = ? 
-      AND translated_language_code = ?
+      UPDATE translations
+      SET translated_value = $1,
+          translated_by = 'USER',
+          translated_at = CURRENT_TIMESTAMP
+      WHERE Original_data_keys = $2
+        AND Original_Data_Language_Code = $3
+        AND translated_language_code = $4
     `;
 
-    // Execute the query with parameterized inputs to prevent SQL injection
-    const [result] = await db.query(query, [
-      newTranslation,
-      key,
-      originalLanguageCode,
-      translatedLanguageCode,
+    // ✅ Execute the query with parameterized inputs
+    const result = await db.query(query, [
+      newTranslation, // $1 -> new translated value
+      key, // $2 -> key
+      originalLanguageCode, // $3 -> original language code
+      translatedLanguageCode, // $4 -> translated language code
     ]);
 
-    // Check if the translation was actually updated
-    if (result.affectedRows === 0) {
+    // ✅ Check if the translation was actually updated
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: "Translation not found" });
     }
 
-    // Send success response
+    // ✅ Send success response
     res.status(200).json({ message: "Translation updated successfully!" });
   } catch (error) {
-    console.error("Error updating translation:", error);
+    console.error("❌ Error updating translation:", error);
     res.status(500).json({ error: "Failed to update translation" });
   }
 };
 
 
-
 // =========================================================================
 
 const translateAddedKey = async (req, res) => {
-  console.log("reached translateAddedKye function in backend")
+  console.log("reached translateAddedKey function in backend")
   const { key, value, languages } = req.body;
 
   if (!key || !value || !languages || !Array.isArray(languages)) {
@@ -404,46 +532,90 @@ Text: "${value}"
 
 
 
+// const saveAddedKeyTranslationsToDB = async (
+//   translations,
+//   originalDataLanguageCode
+// ) => {
+//   const query = `
+//     INSERT INTO translations
+//     (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
+//     VALUES ?
+//     ON DUPLICATE KEY UPDATE
+//     Original_data_value = VALUES(Original_data_value),
+//     translated_value = VALUES(translated_value),
+//     translated_language_code = VALUES(translated_language_code),
+//     translated_by = VALUES(translated_by),
+//     translated_at = CURRENT_TIMESTAMP
+//   `;
+
+//   // ✅ Prepare the values array
+//   const values = Object.entries(translations).map(([lang, data]) => [
+//     data.key, // Original_data_keys (the added key)
+//     data.value, // Original_data_value (the original English value)
+//     originalDataLanguageCode, // Original_Data_Language_Code (e.g., "en")
+//     data.translation, // Translated value
+//     data.translated_language_code, // Translated language code (e.g., "ru", "de")
+//     "AI", // Translated by
+//   ]);
+
+//   console.log("------------------------------------------------------");
+//   console.log("✅ Values array to insert into DB:", values);
+//   console.log("------------------------------------------------------");
+
+//   try {
+//     // ✅ Insert into DB
+//     await db.query(query, [values]);
+//     console.log("✅ Added translations saved successfully.");
+//   } catch (error) {
+//     console.error("❌ Error saving translations to DB:", error.message);
+//     throw new Error("Failed to save translations to the database");
+//   }
+// };
+
+
 const saveAddedKeyTranslationsToDB = async (
   translations,
   originalDataLanguageCode
 ) => {
+  // ✅ PostgreSQL Insert with ON CONFLICT (UPSERT)
   const query = `
     INSERT INTO translations 
-    (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
-    VALUES ?
-    ON DUPLICATE KEY UPDATE
-    Original_data_value = VALUES(Original_data_value),
-    translated_value = VALUES(translated_value),
-    translated_language_code = VALUES(translated_language_code),
-    translated_by = VALUES(translated_by),
-    translated_at = CURRENT_TIMESTAMP
+    (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by, translated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+    ON CONFLICT (Original_data_keys, Original_Data_Language_Code, translated_language_code)
+    DO UPDATE SET
+      Original_data_value = EXCLUDED.Original_data_value,
+      translated_value = EXCLUDED.translated_value,
+      translated_language_code = EXCLUDED.translated_language_code,
+      translated_by = EXCLUDED.translated_by,
+      translated_at = CURRENT_TIMESTAMP;
   `;
 
-  // ✅ Prepare the values array
-  const values = Object.entries(translations).map(([lang, data]) => [
-    data.key, // Original_data_keys (the added key)
-    data.value, // Original_data_value (the original English value)
-    originalDataLanguageCode, // Original_Data_Language_Code (e.g., "en")
-    data.translation, // Translated value
-    data.translated_language_code, // Translated language code (e.g., "ru", "de")
-    "AI", // Translated by
-  ]);
-
-  console.log("------------------------------------------------------");
-  console.log("✅ Values array to insert into DB:", values);
-  console.log("------------------------------------------------------");
-
   try {
-    // ✅ Insert into DB
-    await db.query(query, [values]);
+    // ✅ Loop through the translations and insert them one by one
+    for (const [lang, data] of Object.entries(translations)) {
+      const values = [
+        data.key, // $1 -> Original_data_keys
+        data.value, // $2 -> Original_data_value
+        originalDataLanguageCode, // $3 -> Original_Data_Language_Code
+        data.translation, // $4 -> Translated value
+        data.translated_language_code, // $5 -> Translated language code
+        "AI", // $6 -> Translated by
+      ];
+
+      console.log("------------------------------------------------------");
+      console.log("✅ Inserting values into DB:", values);
+      console.log("------------------------------------------------------");
+
+      await db.query(query, values);
+    }
+
     console.log("✅ Added translations saved successfully.");
   } catch (error) {
     console.error("❌ Error saving translations to DB:", error.message);
     throw new Error("Failed to save translations to the database");
   }
 };
-
 
 
 
