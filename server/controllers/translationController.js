@@ -29,10 +29,8 @@ const translateKeys = async (req, res) => {
     // Extract values from parsedData
     const valuesArray = Object.values(parsedData["English_en"] || {});
 
-
     // console.log("values Array", valuesArray);
 
-    // Translate only the values using Gemini API
     const translationResponse = await getGeminiTranslations(
       parsedData,
       valuesArray,
@@ -45,8 +43,6 @@ const translateKeys = async (req, res) => {
     //   translations
     // );
 
-    // Save translations to the database
-
     const { translations } = translationResponse;
 
     await saveTranslationsToDB(
@@ -55,14 +51,12 @@ const translateKeys = async (req, res) => {
       selectedlanguageCode
     );
 
-    // Send translated data back in the response
     res.status(200).json(translationResponse);
   } catch (error) {
     console.error("Error translating values:", error);
     res.status(500).json({ error: "Failed to translate values" });
   }
 };
-
 
 
 // Function to get translations from Gemini API
@@ -73,11 +67,11 @@ async function getGeminiTranslations(
   languageName
 ) {
   const translations = [];
-  const batchSize = 25; // Batch size for multi-token sending
+  const batchSize = 25; 
   const genAI = new GoogleGenerativeAI(process.env.API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-  // Helper function to send a batch request
+
   const translateBatch = async (valuesArray) => {
   const prompt = `
   You are a translation assistant. Translate the following **values** into the language whose language code is ${languageCode} and language name is ${languageName}.
@@ -128,21 +122,21 @@ async function getGeminiTranslations(
       const result = await model.generateContent(prompt);
     const translatedText = result.response.text().trim();
 
-    // Parse the JSON response
-      // console.log(`🟢 Raw Translated Text:`, translatedText);
+
+      // console.log(`Raw Translated Text:`, translatedText);
       const parsedTranslations = JSON.parse(translatedText);
-      console.log(`🟢 Batch Translations:`, parsedTranslations);
+      console.log(`Batch Translations:`, parsedTranslations);
 
       return parsedTranslations;
     } catch (error) {
-      console.error(`❌ Error translating batch:`, error);
+      console.error(`Error translating batch:`, error);
       // Return empty translations on failure
       throw error;
     }
   };
 
   try {
-    // ✅ Splitting into batches of 50
+
     const batches = [];
     for (let i = 0; i < valuesArray.length; i += batchSize) {
       batches.push(valuesArray.slice(i, i + batchSize));
@@ -152,27 +146,26 @@ async function getGeminiTranslations(
       `📦 Sending ${batches.length} batches with batch size: ${batchSize}`
     );
 
-    let isBatchFailed = false; // Flag to track if any batch fails
+    let isBatchFailed = false; 
 
-    // ✅ Sending all batches concurrently using Promise.allSettled
+    // Sending all batches concurrently using Promise.allSettled
     const batchResults = await Promise.allSettled(
       batches.map((batch) => translateBatch(batch))
     );
 
-    // ✅ Merging all batch responses into a single object
+    // Merging all batch responses into a single object
     const combinedTranslations = batchResults
       .filter((result) => result.status === "fulfilled")
       .reduce((acc, batchResult) => {
         return { ...acc, ...batchResult.value };
       }, {});
 
-    // ✅ Check if any batch failed
+    // Check if any batch failed
     isBatchFailed = batchResults.some((result) => result.status === "rejected");
 
-    // console.log(`✅ Combined Translations:`, combinedTranslations);
-    console.log(`🚫 Batch Translation Failed: ${isBatchFailed}`);
+    // console.log(`Combined Translations:`, combinedTranslations);
+    console.log(`Batch Translation Failed: ${isBatchFailed}`);
 
-    // ✅ Mapping translations into the final format
     const translations = [];
     for (const key in parsedData["English_en"]) {
       const originalValue = parsedData["English_en"][key];
@@ -186,15 +179,14 @@ async function getGeminiTranslations(
       });
     }
 
-    // ✅ Returning both translations and batch status
     return {
       BatchTranslationResult: !isBatchFailed, // true if all batches succeed, false if any fail
       translations,
     };
   } catch (error) {
-    console.error("❌ Error in multi-token translation:", error);
+    console.error("Error in multi-token translation:", error);
 
-    // ✅ Handle any major errors by setting a default error message
+    // Handle any major errors by setting a default error message
     const translations = [];
     for (const key in parsedData["English_en"]) {
       translations.push({
@@ -214,21 +206,20 @@ async function getGeminiTranslations(
 
 // ===========================================================================================
 
-
 async function saveTranslationsToDB(
   translations,
   originalDataLanguageCode,
   translatedLanguageCode
 ) {
   try {
-    // ✅ Prepare values for bulk insertion
+    // Prepare values for bulk insertion
     const values = translations.map(({ key, value, translation }) => [
-      key, // Original_data_keys
-      value, // Original_data_value
-      originalDataLanguageCode, // Original_Data_Language_Code
-      translation, // translated_value
-      translatedLanguageCode, // translated_language_code
-      "AI", // translated_by (default to AI)
+      key, 
+      value, 
+      originalDataLanguageCode, 
+      translation, 
+      translatedLanguageCode, 
+      "AI", 
     ]);
 
     if (values.length === 0) {
@@ -236,7 +227,7 @@ async function saveTranslationsToDB(
       return;
     }
 
-    // ✅ Dynamically generate PostgreSQL placeholders
+    // Dynamically generate PostgreSQL placeholders
     const placeholders = values
       .map(
         (_, index) =>
@@ -246,7 +237,7 @@ async function saveTranslationsToDB(
       )
       .join(", ");
 
-    // ✅ PostgreSQL upsert query
+    // PostgreSQL upsert query
     const query = `
       INSERT INTO translations 
       (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
@@ -259,27 +250,24 @@ async function saveTranslationsToDB(
         translated_at = CURRENT_TIMESTAMP;
     `;
 
-    // ✅ Flatten the values array for parameterized query execution
+    // Flatten the values array for parameterized query execution
     const flatValues = values.flat();
 
     console.log("------------------------------------------------------");
-    console.log("🔥 Values to insert in PostgreSQL:", flatValues);
+    console.log("Values to insert in PostgreSQL:", flatValues);
     console.log("------------------------------------------------------");
 
-    // ✅ Execute the query
+    // Execute the query
     await db.query(query, flatValues);
 
-    console.log("✅ Translations saved successfully in PostgreSQL!");
+    console.log("Translations saved successfully in PostgreSQL!");
   } catch (error) {
-    console.error("❌ Error saving translations to DB:", error.message);
+    console.error("Error saving translations to DB:", error.message);
     throw new Error("Failed to save translations to the database");
   }
 }
 
-
-
 // ===========================================================================================
-
 
 const translationEdit = async (req, res) => {
   console.log("You reached translationEdit");
@@ -287,7 +275,6 @@ const translationEdit = async (req, res) => {
   const { key, newTranslation, originalLanguageCode, translatedLanguageCode } =
     req.body;
 
-  // ✅ Validate input
   if (
     !key ||
     !newTranslation ||
@@ -297,7 +284,6 @@ const translationEdit = async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // ✅ Validate input formats
   if (
     typeof key !== "string" ||
     typeof newTranslation !== "string" ||
@@ -308,7 +294,7 @@ const translationEdit = async (req, res) => {
   }
 
   try {
-    // ✅ PostgreSQL Update Query
+    // PostgreSQL Update Query
     const query = `
       UPDATE translations
       SET translated_value = $1,
@@ -319,7 +305,7 @@ const translationEdit = async (req, res) => {
         AND translated_language_code = $4
     `;
 
-    // ✅ Execute the query with parameterized inputs
+    // Execute the query with parameterized inputs
     const result = await db.query(query, [
       newTranslation, // $1 -> new translated value
       key, // $2 -> key
@@ -327,12 +313,11 @@ const translationEdit = async (req, res) => {
       translatedLanguageCode, // $4 -> translated language code
     ]);
 
-    // ✅ Check if the translation was actually updated
+    // Check if the translation was actually updated
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Translation not found" });
     }
 
-    // ✅ Send success response
     res.status(200).json({ message: "Translation updated successfully!" });
   } catch (error) {
     console.error("❌ Error updating translation:", error);
@@ -354,15 +339,15 @@ const translateAddedKey = async (req, res) => {
   try {
     console.log(`🔹 Translating '${value}' for languages:`, languages);
 
-    // ✅ Step 1: Get translations from Gemini
+    // Step 1: Get translations from Gemini
     const translations = await AddedKeyGeminiTranslation(key ,value, languages);
 
     console.log("✅ Gemini Translations:", translations);
 
-    // ✅ Step 2: Save translations to DB
+    // Step 2: Save translations to DB
     await saveAddedKeyTranslationsToDB(translations , "en");
 
-    // ✅ Step 3: Send response back to frontend
+    // Step 3: Send response back to frontend
     res.status(200).json({ translations });
   } catch (error) {
     console.error("❌ Error in translateAddedKey:", error);
@@ -374,10 +359,10 @@ const translateAddedKey = async (req, res) => {
 const AddedKeyGeminiTranslation = async (key, value, languages) => {
   const genAI = new GoogleGenerativeAI(process.env.API_KEY);
 
-  // ✅ Specify the model
+
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-  // ✅ Simple and clear prompt
+
   const prompt = `
 Translate the following English text into these languages: ${languages}.
 Format the output as a JSON object with keys in the format {LanguageCode: Translation}.
@@ -401,12 +386,11 @@ Text: "${value}"
     const response = await result.response;
     const text = response.text().trim();
 
-    console.log("🟢 Gemini Response:", text);
+    console.log("Gemini Response:", text);
 
-    // ✅ Parse the raw Gemini response
+
     const rawTranslations = JSON.parse(text);
 
-    // ✅ Create the enhanced format
     const formattedTranslations = {};
 
     for (const [lang, translation] of Object.entries(rawTranslations)) {
@@ -421,19 +405,17 @@ Text: "${value}"
     }
     return formattedTranslations;
   } catch (error) {
-    console.error("❌ Error during Gemini translation:", error);
+    console.error("Error during Gemini translation:", error);
     throw new Error("Failed to translate using Gemini");
   }
 };
-
-
 
 
 const saveAddedKeyTranslationsToDB = async (
   translations,
   originalDataLanguageCode
 ) => {
-  // ✅ PostgreSQL Insert with ON CONFLICT (UPSERT)
+  // PostgreSQL Insert with ON CONFLICT (UPSERT)
   const query = `
     INSERT INTO translations 
     (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by, translated_at)
@@ -448,7 +430,7 @@ const saveAddedKeyTranslationsToDB = async (
   `;
 
   try {
-    // ✅ Loop through the translations and insert them one by one
+    // Loop through the translations and insert them one by one
     for (const [lang, data] of Object.entries(translations)) {
       const values = [
         data.key, // $1 -> Original_data_keys
@@ -460,15 +442,15 @@ const saveAddedKeyTranslationsToDB = async (
       ];
 
       console.log("------------------------------------------------------");
-      console.log("✅ Inserting values into DB:", values);
+      console.log("Inserting values into DB:", values);
       console.log("------------------------------------------------------");
 
       await db.query(query, values);
     }
 
-    console.log("✅ Added translations saved successfully.");
+    console.log("Added translations saved successfully.");
   } catch (error) {
-    console.error("❌ Error saving translations to DB:", error.message);
+    console.error("Error saving translations to DB:", error.message);
     throw new Error("Failed to save translations to the database");
   }
 };

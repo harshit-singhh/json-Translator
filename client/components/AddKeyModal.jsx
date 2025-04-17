@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { FaSpinner } from "react-icons/fa"; // Import loader
+import { FaSpinner } from "react-icons/fa"; 
 
 const AddKeyModal = ({
   setIsModalOpen,
@@ -12,14 +12,14 @@ const AddKeyModal = ({
   const [newKey, setNewKey] = useState("");
   const [translations, setLocalTranslations] = useState({});
   const initialLanguages = Object.keys(parsedData);
-  const [showCloseIcon, setShowCloseIcon] = useState(false); // Control cross button visibility
+  const [showCloseIcon, setShowCloseIcon] = useState(false); 
   const modalBodyRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   useEffect(() => {
     console.log("Duplicate Modal open", showDuplicateModal);
-  }, [showDuplicateModal]); // ✅ Correct
+  }, [showDuplicateModal]); 
   // Initialize translations with empty values for all initial languages
   const handleKeyChange = (e) => {
     const key = e.target.value;
@@ -48,7 +48,7 @@ const AddKeyModal = ({
       return;
     }
 
-    // ✅ Check for duplicates only in the first language
+    // Check for duplicates only in the first language
     const firstLanguage = Object.keys(parsedData)[0]; // Get the first language
     const isDuplicate = parsedData[firstLanguage]?.hasOwnProperty(newKey);
     console.log("duplicate present :", isDuplicate);
@@ -59,7 +59,7 @@ const AddKeyModal = ({
       return; // Pause here until user makes a choice
     }
 
-    // ✅ Proceed with the usual flow
+    // Proceed with the usual flow
     await saveKey();
   };
 
@@ -153,28 +153,28 @@ const AddKeyModal = ({
       if (result.ok) {
         const Response = await result.json();
         const geminiResponse = Response.translations;
-        console.log("✅ Received Gemini translations:", geminiResponse);
+        console.log("Received Gemini translations:", geminiResponse);
 
-        // ✅ Traverse Gemini translations and update the translations object
+        // Traverse Gemini translations and update the translations object
         for (const [lang, translationObj] of Object.entries(geminiResponse)) {
           if (!geminiTranslations[lang]) {
             geminiTranslations[lang] = [];
           }
 
-          // 🔥 Find the existing key if it exists
+          // Find the existing key if it exists
           const existingIndex = geminiTranslations[lang].findIndex(
             (item) => item.key === key
           );
 
           if (existingIndex !== -1) {
-            // ✅ Key exists → Replace old value + old translation
+            // Key exists → Replace old value + old translation
             geminiTranslations[lang][existingIndex] = {
               key,
               value: translationObj.value, // New value
               translation: translationObj.translation, // New translation
             };
           } else {
-            // ✅ Key doesn't exist → Push new translation
+            // Key doesn't exist → Push new translation
             geminiTranslations[lang].push({
               key,
               value: translationObj.value,
@@ -185,12 +185,12 @@ const AddKeyModal = ({
 
         setGeminiTranslations({ ...geminiTranslations });
 
-        // console.log("✅ Updated translations object:", translations);
+        // console.log("Updated translations object:", translations);
       } else {
-        console.error("❌ Failed to fetch Gemini translations.");
+        console.error("Failed to fetch Gemini translations.");
       }
     } catch (error) {
-      console.error("❌ Error fetching Gemini translations:", error);
+      console.error("Error fetching Gemini translations:", error);
     }
   };
 

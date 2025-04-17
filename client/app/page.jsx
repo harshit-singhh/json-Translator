@@ -13,7 +13,7 @@ export default function HomePage() {
   const [parsedData, setParsedData] = useState([]);
   const [uploadMessage, setUploadMessage] = useState("");
   const [languageName, setLanguageName] = useState("");
-  const [translations, setTranslations] = useState({}); // Store translations for each language
+  const [translations, setTranslations] = useState({}); 
   const [selectedOption, setSelectedOption] = useState(null);
   const [originalDataLanguageCode, setOriginalDataLanguageCode] =
     useState("en");
@@ -21,17 +21,17 @@ export default function HomePage() {
     useState("");
   const [currentlySelectedLanguageCode, setCurrentlySelectedLanguageCode] =
     useState("");
-  const [isLoading, setIsLoading] = useState(false); // Loading state for button
+  const [isLoading, setIsLoading] = useState(false); 
   const [initialUploadCounter, setInitialUploadCounter] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false); // Control modal visibility
 
   useEffect(() => {
     console.log("translations state", translations);
-  }, [JSON.stringify(translations)]); // ✅ Correct
+  }, [translations]); 
 
-  useEffect(() => {
-    console.log("parsed Data", parsedData);
-  }, [JSON.stringify(parsedData)]);
+    useEffect(() => {
+      console.log("parsed Data", parsedData);
+    }, [parsedData]);
 
   useEffect(() => {
     console.log("initialUploadCounter ", initialUploadCounter);
@@ -109,13 +109,13 @@ export default function HomePage() {
         throw new Error("Failed to upload language");
       }
 
-      const result = await response.json(); // ✅ Receiving the new translationResponse structure
+      const result = await response.json(); // Receiving the new translationResponse structure
 
       console.log("Backend response:", result);
 
-      const { BatchTranslationResult, translations } = result; // ✅ Destructure the response
+      const { BatchTranslationResult, translations } = result; // Destructure the response
 
-      // ✅ Update translations state for the new language first
+      // Update translations state for the new language first
       setTranslations((prevTranslations) => ({
         ...prevTranslations,
         [`${selectedlanguageName}_${selectedlanguageCode}`]: translations, // Store translations in the state
@@ -125,7 +125,7 @@ export default function HomePage() {
         "✅ Successfully added backend response to translations state"
       );
 
-      // ✅ Display appropriate message based on BatchTranslationResult after updating the table
+      // Display appropriate message based on BatchTranslationResult after updating the table
       if (!BatchTranslationResult) {
         setUploadMessage(
           "⚠️ Couldn't get translations of one or more keys. Please try again."
@@ -134,7 +134,7 @@ export default function HomePage() {
         setUploadMessage("✅ Language uploaded and translations updated!");
       }
     } catch (error) {
-      console.error("❌ Error uploading language:", error);
+      console.error("Error uploading language:", error);
       setUploadMessage("❌ Error adding language!");
     } finally {
       setIsLoading(false); // Stop loader
@@ -187,6 +187,18 @@ export default function HomePage() {
 
             return updatedData;
           });
+
+          // This is how parsed data looks like 
+          // {
+          //   "English_en": {
+          //     "ok": "OK",
+          //     "next": "Next"
+          //   },
+          //   "Hindi_hi": {
+          //     "ok": "ठीक है"
+          //   }
+          // }
+
 
           setInitialUploadCounter((prev) => prev + 1); // Increase counter after a successful upload
 

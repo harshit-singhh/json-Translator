@@ -7,9 +7,8 @@ const languageMap = {
   es: "Spanish",
   fr: "French",
   ts: "Testing",
-  sm: "Small Test"
+  sm: "Small Test",
 };
-
 
 const uploadData = async (req, res) => {
   try {
@@ -21,10 +20,9 @@ const uploadData = async (req, res) => {
       });
     }
 
-    // Determine language name
     const languageName = languageMap[languageCode] || "Unknown";
 
-    // ✅ Check if language already exists in the database
+    // Check if language already exists in the database
     const existingLanguageResult = await db.query(
       `SELECT * FROM uploadedfiles WHERE language_code = $1`,
       [languageCode]
@@ -37,7 +35,7 @@ const uploadData = async (req, res) => {
       );
     }
 
-    // ✅ Insert metadata into the OriginalData table
+    // Insert metadata into the OriginalData table
     const insertQuery = `
       INSERT INTO originaldata (key_name, value, language_code) 
       VALUES ${Object.keys(extractedData)
@@ -62,13 +60,10 @@ const uploadData = async (req, res) => {
       metadata: { languageCode, languageName },
     });
   } catch (error) {
-    console.error("❌ Error processing data:", error);
+    console.error("Error processing data:", error);
     res.status(500).send({ message: "Error processing data." });
   }
 };
-
-
-
 
 // ====================================================================
 
@@ -82,11 +77,11 @@ const addNewKey = async (req, res) => {
   console.log("Before inserting new key in originaldata table");
 
   try {
-    // ✅ Prepare values for bulk insertion
+    // Prepare values for bulk insertion
     const values = [];
     for (const [langCode, value] of Object.entries(translations)) {
       if (langCode && value) {
-        values.push([key, value, langCode]); // ✅ Push each set of 3 as an array
+        values.push([key, value, langCode]); // Push each set of 3 as an array
       }
     }
 
@@ -94,7 +89,7 @@ const addNewKey = async (req, res) => {
       return res.status(400).json({ error: "No valid translations provided" });
     }
 
-    // ✅ Dynamically build the bulk insert query with placeholders
+    // Dynamically build the bulk insert query with placeholders
     const placeholders = values
       .map(
         (_, index) =>
@@ -109,28 +104,23 @@ const addNewKey = async (req, res) => {
       SET value = EXCLUDED.value;
     `;
 
-    // ✅ Flatten the values array for the query
+    // Flatten the values array for the query
     const flattenedValues = values.flat();
 
-    // ✅ Execute the bulk insert
+    // Execute the bulk insert
     await db.query(insertQuery, flattenedValues);
 
-    console.log("✅ Inserted new key and translations successfully.");
+    console.log("Inserted new key and translations successfully.");
     res
       .status(201)
       .json({ message: "New key and translations added successfully" });
   } catch (error) {
-    console.error("❌ Error inserting new key data:", error);
+    console.error("Error inserting new key data:", error);
     res.status(500).json({ error: "Failed to add new key and translations" });
   }
 };
 
-
-
-
-
-
-
 module.exports = {
-  uploadData, addNewKey,
+  uploadData,
+  addNewKey,
 };
