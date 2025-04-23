@@ -2,15 +2,15 @@ import React from "react";
 import Select from "react-select";
 import languages from "../data/languages";
 const SearchableDropdown = ({ selectedOption, setSelectedOption }) => {
-  // Map languages array to the format required by react-select
+
   const options = languages.map((lang) => ({
-    value: lang.code, // Using 'code' as the value
-    label: lang.name, // Using 'name' as the label
+    value: lang.code, 
+    label: lang.name, 
   }));
 
-  // Handle selection change
+
   const handleChange = (selected) => {
-    setSelectedOption(selected); // Update the parent component's state
+    setSelectedOption(selected); 
   };
 
   return (

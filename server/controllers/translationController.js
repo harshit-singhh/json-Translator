@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const db = require("../config/db");
 
 // Predefined translation handler
-const translateKeys = async (req, res) => {
+const translateKeys = async (req, res, next) => {
   console.log("you reached translateKeys function");
 
   const {
@@ -53,8 +53,7 @@ const translateKeys = async (req, res) => {
 
     res.status(200).json(translationResponse);
   } catch (error) {
-    console.error("Error translating values:", error);
-    res.status(500).json({ error: "Failed to translate values" });
+    next(error);
   }
 };
 
@@ -129,9 +128,8 @@ async function getGeminiTranslations(
 
       return parsedTranslations;
     } catch (error) {
-      console.error(`Error translating batch:`, error);
-      // Return empty translations on failure
-      throw error;
+     
+      throw new Error(error.message);
     }
   };
 
@@ -143,7 +141,7 @@ async function getGeminiTranslations(
     }
 
     console.log(
-      `📦 Sending ${batches.length} batches with batch size: ${batchSize}`
+      `Sending ${batches.length} batches with batch size: ${batchSize}`
     );
 
     let isBatchFailed = false; 
@@ -184,7 +182,7 @@ async function getGeminiTranslations(
       translations,
     };
   } catch (error) {
-    console.error("Error in multi-token translation:", error);
+    console.error("Error in multi-token translation:", error.message);
 
     // Handle any major errors by setting a default error message
     const translations = [];
@@ -212,64 +210,54 @@ async function saveTranslationsToDB(
   translatedLanguageCode
 ) {
   try {
-    // Prepare values for bulk insertion
-    const values = translations.map(({ key, value, translation }) => [
-      key, 
-      value, 
-      originalDataLanguageCode, 
-      translation, 
-      translatedLanguageCode, 
-      "AI", 
-    ]);
-
-    if (values.length === 0) {
+    if (!translations || translations.length === 0) {
       console.log("No translations to save.");
       return;
     }
 
-    // Dynamically generate PostgreSQL placeholders
-    const placeholders = values
-      .map(
-        (_, index) =>
-          `($${index * 6 + 1}, $${index * 6 + 2}, $${index * 6 + 3}, $${
-            index * 6 + 4
-          }, $${index * 6 + 5}, $${index * 6 + 6})`
-      )
-      .join(", ");
-
-    // PostgreSQL upsert query
+    // Prepare the parameterized query
     const query = `
       INSERT INTO translations 
-      (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by)
-      VALUES ${placeholders}
+      (Original_data_keys, Original_data_value, Original_Data_Language_Code, translated_value, translated_language_code, translated_by, translated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
       ON CONFLICT (Original_data_keys, Original_Data_Language_Code, translated_language_code)
       DO UPDATE SET
+        Original_data_value = EXCLUDED.Original_data_value,
         translated_value = EXCLUDED.translated_value,
         translated_language_code = EXCLUDED.translated_language_code,
         translated_by = EXCLUDED.translated_by,
         translated_at = CURRENT_TIMESTAMP;
     `;
 
-    // Flatten the values array for parameterized query execution
-    const flatValues = values.flat();
+    // Insert one by one (safe)
+    for (const { key, value, translation } of translations) {
+      const values = [
+        key,
+        value,
+        originalDataLanguageCode,
+        translation,
+        translatedLanguageCode,
+        "AI",
+      ];
 
-    console.log("------------------------------------------------------");
-    console.log("Values to insert in PostgreSQL:", flatValues);
-    console.log("------------------------------------------------------");
+      console.log("------------------------------------------------------");
+      console.log("Inserting values into DB:", values);
+      console.log("------------------------------------------------------");
 
-    // Execute the query
-    await db.query(query, flatValues);
+      await db.query(query, values);
+    }
 
-    console.log("Translations saved successfully in PostgreSQL!");
+    console.log("All translations saved successfully!");
   } catch (error) {
-    console.error("Error saving translations to DB:", error.message);
-    throw new Error("Failed to save translations to the database");
+    console.error("Error saving translations:", error.message);
+    throw new Error(error.message);
   }
 }
 
+
 // ===========================================================================================
 
-const translationEdit = async (req, res) => {
+const translationEdit = async (req, res, next) => {
   console.log("You reached translationEdit");
 
   const { key, newTranslation, originalLanguageCode, translatedLanguageCode } =
@@ -320,15 +308,14 @@ const translationEdit = async (req, res) => {
 
     res.status(200).json({ message: "Translation updated successfully!" });
   } catch (error) {
-    console.error("❌ Error updating translation:", error);
-    res.status(500).json({ error: "Failed to update translation" });
+    next(error)
   }
 };
 
 
 // =========================================================================
 
-const translateAddedKey = async (req, res) => {
+const translateAddedKey = async (req, res, next) => {
   console.log("reached translateAddedKey function in backend")
   const { key, value, languages } = req.body;
 
@@ -337,12 +324,12 @@ const translateAddedKey = async (req, res) => {
   }
 
   try {
-    console.log(`🔹 Translating '${value}' for languages:`, languages);
+    console.log(`Translating '${value}' for languages:`, languages);
 
     // Step 1: Get translations from Gemini
     const translations = await AddedKeyGeminiTranslation(key ,value, languages);
 
-    console.log("✅ Gemini Translations:", translations);
+    console.log("Gemini Translations:", translations);
 
     // Step 2: Save translations to DB
     await saveAddedKeyTranslationsToDB(translations , "en");
@@ -350,8 +337,7 @@ const translateAddedKey = async (req, res) => {
     // Step 3: Send response back to frontend
     res.status(200).json({ translations });
   } catch (error) {
-    console.error("❌ Error in translateAddedKey:", error);
-    res.status(500).json({ error: "Failed to translate and save added key" });
+    next(error);
   }
 };
 
@@ -405,8 +391,8 @@ Text: "${value}"
     }
     return formattedTranslations;
   } catch (error) {
-    console.error("Error during Gemini translation:", error);
-    throw new Error("Failed to translate using Gemini");
+   
+    throw new Error(error.message);
   }
 };
 
@@ -450,8 +436,8 @@ const saveAddedKeyTranslationsToDB = async (
 
     console.log("Added translations saved successfully.");
   } catch (error) {
-    console.error("Error saving translations to DB:", error.message);
-    throw new Error("Failed to save translations to the database");
+    
+    throw new Error(error.message);
   }
 };
 

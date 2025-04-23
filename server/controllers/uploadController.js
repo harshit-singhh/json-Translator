@@ -10,7 +10,7 @@ const languageMap = {
   sm: "Small Test",
 };
 
-const uploadData = async (req, res) => {
+const uploadData = async (req, res, next) => {
   try {
     const { languageCode, extractedData } = req.body;
 
@@ -37,37 +37,29 @@ const uploadData = async (req, res) => {
 
     // Insert metadata into the OriginalData table
     const insertQuery = `
-      INSERT INTO originaldata (key_name, value, language_code) 
-      VALUES ${Object.keys(extractedData)
-        .map(
-          (_, index) =>
-            `($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`
-        )
-        .join(", ")}
-      ON CONFLICT (key_name, language_code) DO UPDATE 
-      SET value = EXCLUDED.value;
+      INSERT INTO originaldata (key_name, value, language_code)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (key_name, language_code)
+      DO UPDATE SET value = EXCLUDED.value;
     `;
 
-    const values = [];
-    for (const key in extractedData) {
-      values.push(key, extractedData[key], languageCode);
+    // Loop through extractedData and insert each key-value pair
+    for (const [key, value] of Object.entries(extractedData)) {
+      await db.query(insertQuery, [key, value, languageCode]);
     }
-
-    await db.query(insertQuery, values);
 
     res.status(200).send({
       message: "Data and metadata uploaded successfully!",
       metadata: { languageCode, languageName },
     });
   } catch (error) {
-    console.error("Error processing data:", error);
-    res.status(500).send({ message: "Error processing data." });
+    next(error);
   }
 };
 
 // ====================================================================
 
-const addNewKey = async (req, res) => {
+const addNewKey = async (req, res, next) => {
   const { key, translations } = req.body;
 
   if (!key || !translations || typeof translations !== "object") {
@@ -77,46 +69,28 @@ const addNewKey = async (req, res) => {
   console.log("Before inserting new key in originaldata table");
 
   try {
-    // Prepare values for bulk insertion
-    const values = [];
-    for (const [langCode, value] of Object.entries(translations)) {
-      if (langCode && value) {
-        values.push([key, value, langCode]); // Push each set of 3 as an array
-      }
-    }
 
-    if (values.length === 0) {
-      return res.status(400).json({ error: "No valid translations provided" });
-    }
-
-    // Dynamically build the bulk insert query with placeholders
-    const placeholders = values
-      .map(
-        (_, index) =>
-          `($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`
-      )
-      .join(", ");
-
+    // Prepare insert query
     const insertQuery = `
       INSERT INTO originaldata (key_name, value, language_code)
-      VALUES ${placeholders}
-      ON CONFLICT (key_name, language_code) DO UPDATE
-      SET value = EXCLUDED.value;
+      VALUES ($1, $2, $3)
+      ON CONFLICT (key_name, language_code)
+      DO UPDATE SET value = EXCLUDED.value;
     `;
 
-    // Flatten the values array for the query
-    const flattenedValues = values.flat();
-
-    // Execute the bulk insert
-    await db.query(insertQuery, flattenedValues);
+    // Loop over each translation and insert individually
+    for (const [languageCode, value] of Object.entries(translations)) {
+      if (languageCode && value) {
+        await db.query(insertQuery, [key, value, languageCode]);
+      }
+    }
 
     console.log("Inserted new key and translations successfully.");
     res
       .status(201)
       .json({ message: "New key and translations added successfully" });
   } catch (error) {
-    console.error("Error inserting new key data:", error);
-    res.status(500).json({ error: "Failed to add new key and translations" });
+    next(error);
   }
 };
 

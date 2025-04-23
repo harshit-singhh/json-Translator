@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import DynamicTable from "@/components/DynamicTable";
 import SearchableDropdown from "@/components/SearchableDropdown";
 import languages from "@data/languages";
+import { Language } from "@/utils/languageClass";
 import AddKeyModal from "@/components/AddKeyModal";
 
 
@@ -12,33 +13,49 @@ export default function HomePage() {
   const [isFileSelected, setIsFileSelected] = useState(false);
   const [parsedData, setParsedData] = useState([]);
   const [uploadMessage, setUploadMessage] = useState("");
-  const [languageName, setLanguageName] = useState("");
-  const [translations, setTranslations] = useState({}); 
+  const [translations, setTranslations] = useState({});
   const [selectedOption, setSelectedOption] = useState(null);
-  const [originalDataLanguageCode, setOriginalDataLanguageCode] =
-    useState("en");
-  const [currentlySelectedLanguageName, setCurrentlySelectedLanguageName] =
-    useState("");
-  const [currentlySelectedLanguageCode, setCurrentlySelectedLanguageCode] =
-    useState("");
-  const [isLoading, setIsLoading] = useState(false); 
+  const [isLoading, setIsLoading] = useState(false);
   const [initialUploadCounter, setInitialUploadCounter] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false); // Control modal visibility
 
+  // ==========================
+
+  const [uploadedLanguage, setUploadedLanguage] = useState(null);
+  const [originalLanguage, setOriginalLanguage] = useState(new Language("English", "en")); 
+  const [selectedTargetLanguage, setSelectedTargetLanguage] = useState(null); // will be a Language instance
+
   useEffect(() => {
     console.log("translations state", translations);
-  }, [translations]); 
+  }, [translations]);
 
-    useEffect(() => {
-      console.log("parsed Data", parsedData);
-    }, [parsedData]);
+  useEffect(() => {
+    console.log("parsed Data", parsedData);
+  }, [parsedData]);
 
   useEffect(() => {
     console.log("initialUploadCounter ", initialUploadCounter);
   }, [initialUploadCounter]);
+
   useEffect(() => {
-    console.log("originalDataLanguageCode", originalDataLanguageCode);
-  }, [originalDataLanguageCode]);
+    console.log("original Data Language Code ", originalLanguage.code);
+  }, [originalLanguage.code]);
+
+useEffect(() => {
+  if (uploadedLanguage) {
+    console.log("uploadedLanguage name -", uploadedLanguage.name);
+  }
+}, [uploadedLanguage]);
+  
+  useEffect(() => {
+    if (selectedTargetLanguage) {
+      console.log("selected Language name -", selectedTargetLanguage.name);
+    }
+  }, [selectedTargetLanguage]);
+
+  
+  
+  
 
   // Handle file selection
   const handleFileChange = (event) => {
@@ -80,14 +97,14 @@ export default function HomePage() {
     // }
   };
 
-  // Handle language upload
   const handleUploadLanguage = async (
     selectedlanguageCode,
     selectedlanguageName,
     originalDataLanguageCode
   ) => {
-    setCurrentlySelectedLanguageName(selectedlanguageName);
-    setCurrentlySelectedLanguageCode(selectedlanguageCode);
+    setSelectedTargetLanguage(
+      new Language(selectedlanguageName, selectedlanguageCode)
+    );
 
     try {
       setIsLoading(true); // Start loader
@@ -141,7 +158,6 @@ export default function HomePage() {
     }
   };
 
-
   // Handle file parsing
   const handleUpload = async () => {
     if (!file) {
@@ -159,12 +175,18 @@ export default function HomePage() {
           const languageName = getLanguageName(languageCode);
           const languageKey = `${languageName}_${languageCode}`;
 
-          // Check if it's the first upload and ensure it's English
+          const newUploadedLang = new Language(languageName, languageCode);
+          
+  
           if (initialUploadCounter === 0 && languageCode !== "en") {
             setUploadMessage("Upload English language first.");
             setIsFileSelected(false);
             return;
           }
+
+           if (initialUploadCounter === 0 && languageCode === "en") {
+             setOriginalLanguage(newUploadedLang);
+           }
 
           const jsonData = JSON.parse(text);
           const extractedData = flattenObject(jsonData);
@@ -188,7 +210,7 @@ export default function HomePage() {
             return updatedData;
           });
 
-          // This is how parsed data looks like 
+          // This is how parsed data looks like
           // {
           //   "English_en": {
           //     "ok": "OK",
@@ -198,7 +220,6 @@ export default function HomePage() {
           //     "ok": "ठीक है"
           //   }
           // }
-
 
           setInitialUploadCounter((prev) => prev + 1); // Increase counter after a successful upload
 
@@ -222,7 +243,9 @@ export default function HomePage() {
           }
 
           const result = await response.json();
-          setLanguageName(result.metadata.languageName);
+          // setLanguageName(result.metadata.languageName);
+          setUploadedLanguage(newUploadedLang);
+     
           setUploadMessage("File parsed and uploaded successfully!");
           setIsFileSelected(false);
         } catch (error) {
@@ -326,7 +349,7 @@ export default function HomePage() {
         {uploadMessage && <p className="text-gray-700 mb-6">{uploadMessage}</p>}
 
         {/* Searchable Dropdown and Add Language Button */}
-        {Object.keys(parsedData).length > 0 && languageName && (
+        {Object.keys(parsedData).length > 0 && uploadedLanguage?.name && (
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
             <SearchableDropdown
               selectedOption={selectedOption}
@@ -337,7 +360,7 @@ export default function HomePage() {
                 handleUploadLanguage(
                   selectedOption.value,
                   selectedOption.label,
-                  originalDataLanguageCode
+                  originalLanguage.code
                 )
               }
               disabled={!selectedOption || isLoading}
@@ -357,7 +380,7 @@ export default function HomePage() {
         )}
 
         {/* Add Key Button */}
-        {languageName && (
+        {uploadedLanguage?.name && (
           <button
             onClick={() => setIsModalOpen(true)}
             className="px-12 py-3 mb-8 bg-blue-500 text-white text-lg font-semibold rounded-lg hover:bg-blue-600"
@@ -372,9 +395,9 @@ export default function HomePage() {
             parsedData={parsedData}
             translations={translations}
             setTranslations={setTranslations}
-            languageName={languageName}
+            languageName={uploadedLanguage?.name}
             updateTranslation={updateTranslation}
-            originalDataLanguageCode={originalDataLanguageCode}
+            originalDataLanguageCode={originalLanguage.code}
           />
         )}
       </div>
@@ -402,5 +425,4 @@ export default function HomePage() {
       )}
     </>
   );
-
 }
