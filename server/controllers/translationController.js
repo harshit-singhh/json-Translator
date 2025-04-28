@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const db = require("../config/db");
+const _ = require("lodash");
 
 // Predefined translation handler
 const translateKeys = async (req, res, next) => {
@@ -27,7 +28,9 @@ const translateKeys = async (req, res, next) => {
 
   try {
     // Extract values from parsedData
-    const valuesArray = Object.values(parsedData["English_en"] || {});
+    // const valuesArray = Object.values(parsedData["English_en"] || {});
+    const valuesArray = _.values(_.get(parsedData, "English_en", {}));
+
 
     // console.log("values Array", valuesArray);
 
@@ -135,10 +138,9 @@ async function getGeminiTranslations(
 
   try {
 
-    const batches = [];
-    for (let i = 0; i < valuesArray.length; i += batchSize) {
-      batches.push(valuesArray.slice(i, i + batchSize));
-    }
+
+    const batches = _.chunk(valuesArray, batchSize);
+
 
     console.log(
       `Sending ${batches.length} batches with batch size: ${batchSize}`
@@ -152,11 +154,13 @@ async function getGeminiTranslations(
     );
 
     // Merging all batch responses into a single object
-    const combinedTranslations = batchResults
-      .filter((result) => result.status === "fulfilled")
-      .reduce((acc, batchResult) => {
-        return { ...acc, ...batchResult.value };
-      }, {});
+    const combinedTranslations = _.merge(
+      {},
+      ...batchResults
+        .filter((r) => r.status === "fulfilled")
+        .map((r) => r.value)
+    );
+
 
     // Check if any batch failed
     isBatchFailed = batchResults.some((result) => result.status === "rejected");
@@ -210,7 +214,7 @@ async function saveTranslationsToDB(
   translatedLanguageCode
 ) {
   try {
-    if (!translations || translations.length === 0) {
+    if (_.isEmpty(translations)) {
       console.log("No translations to save.");
       return;
     }

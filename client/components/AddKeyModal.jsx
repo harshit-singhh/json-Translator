@@ -13,13 +13,13 @@ const AddKeyModal = ({
   const [translations, setLocalTranslations] = useState({});
   const initialLanguages = Object.keys(parsedData);
   const [showCloseIcon, setShowCloseIcon] = useState(false); 
-  const modalBodyRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   useEffect(() => {
     console.log("Duplicate Modal open", showDuplicateModal);
   }, [showDuplicateModal]); 
+
   // Initialize translations with empty values for all initial languages
   const handleKeyChange = (e) => {
     const key = e.target.value;
@@ -35,6 +35,7 @@ const AddKeyModal = ({
   };
 
   const handleTranslationChange = (lang, value) => {
+
     setLocalTranslations((prev) => ({
       ...prev,
       [lang]: value,
@@ -194,15 +195,6 @@ const AddKeyModal = ({
     }
   };
 
-  // Check if modal content is scrollable
-  useEffect(() => {
-    if (modalBodyRef.current) {
-      setShowCloseIcon(
-        modalBodyRef.current.scrollHeight > modalBodyRef.current.clientHeight
-      );
-    }
-  }, [translations, newKey]);
-
  return (
    <>
      {/* Duplicate Warning Modal */}
@@ -261,7 +253,7 @@ const AddKeyModal = ({
        className="modal show d-block"
        tabIndex="-1"
        role="dialog"
-       style={{ zIndex: 1040 }} // Lower z-index for the main modal
+       style={{ zIndex: 1040 }}
      >
        <div
          className="modal-dialog modal-dialog-centered modal-lg"
@@ -273,12 +265,8 @@ const AddKeyModal = ({
              <h5 className="modal-title">Add New Key</h5>
            </div>
 
-           {/* Modal Body */}
-           <div
-             className="modal-body overflow-auto"
-             ref={modalBodyRef}
-             style={{ maxHeight: "300px" }}
-           >
+           {/* Body */}
+           <div className="modal-body">
              {/* Key Input */}
              <div className="form-group">
                <label style={{ marginBottom: "8px", display: "block" }}>
@@ -339,13 +327,7 @@ const AddKeyModal = ({
                style={{ width: "120px", height: "40px" }}
                disabled={loading}
              >
-               {loading ? (
-                 <>
-                   <FaSpinner className="spin-icon" />
-                 </>
-               ) : (
-                 "Save Key"
-               )}
+               {loading ? <FaSpinner className="spin-icon" /> : "Save Key"}
              </button>
            </div>
          </div>
@@ -354,6 +336,6 @@ const AddKeyModal = ({
    </>
  );
 
-};
+}
 
 export default AddKeyModal;

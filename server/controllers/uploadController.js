@@ -1,26 +1,14 @@
 const db = require("../config/db");
 
-// Predefined mapping of language codes to names
-const languageMap = {
-  en: "English",
-  hi: "Hindi",
-  es: "Spanish",
-  fr: "French",
-  ts: "Testing",
-  sm: "Small Test",
-};
-
 const uploadData = async (req, res, next) => {
   try {
-    const { languageCode, extractedData } = req.body;
+    const { languageCode, languageName, extractedData } = req.body;
 
     if (!languageCode || !extractedData || typeof extractedData !== "object") {
       return res.status(400).send({
         message: "Invalid request: Missing languageCode or extractedData.",
       });
     }
-
-    const languageName = languageMap[languageCode] || "Unknown";
 
     // Check if language already exists in the database
     const existingLanguageResult = await db.query(
@@ -49,8 +37,7 @@ const uploadData = async (req, res, next) => {
     }
 
     res.status(200).send({
-      message: "Data and metadata uploaded successfully!",
-      metadata: { languageCode, languageName },
+      message: "Data uploaded successfully!"
     });
   } catch (error) {
     next(error);

@@ -218,6 +218,7 @@ useEffect(() => {
           //   },
           //   "Hindi_hi": {
           //     "ok": "ठीक है"
+          //     "next": "No Translation Found"
           //   }
           // }
 
@@ -233,6 +234,7 @@ useEffect(() => {
               },
               body: JSON.stringify({
                 languageCode,
+                languageName,
                 extractedData, // Flattened key-value pairs
               }),
             }
