@@ -60,6 +60,8 @@ Fields: id, Original_data_keys, Original_data_value, Original_Data_Language_Code
 
 ## Screenshots
 
+### The data used in these screenshots is demo data.
+
 ![App Screenshot](https://raw.githubusercontent.com/harshit-singhh/json-Translator/refs/heads/main/images/Screenshot_1.png)
 
 ![App Screenshot](https://raw.githubusercontent.com/harshit-singhh/json-Translator/refs/heads/main/images/Screenshot_2.png)
